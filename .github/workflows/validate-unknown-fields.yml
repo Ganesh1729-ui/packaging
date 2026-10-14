@@ -8,8 +8,17 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: metadata-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
   tests:
+    name: Complete tests on Python ${{ matrix.python }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -51,6 +60,12 @@ jobs:
           git diff --exit-code -- src/packaging/metadata.py
           nox -s "tests-$PYTHON_VERSION" -- --junitxml=green.xml --color=no 2>&1 | tee green.txt
           COVERAGE_FILE=".coverage.$PYTHON_VERSION" python -m coverage report --include=src/packaging/metadata.py
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          suite = ET.parse('green.xml').getroot().find('testsuite')
+          assert suite is not None
+          assert (suite.attrib['tests'], suite.attrib['failures'], suite.attrib['errors'], suite.attrib['skipped']) == ('62502', '0', '0', '0'), suite.attrib
+          PY
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
@@ -63,6 +78,7 @@ jobs:
           if-no-files-found: error
 
   lint:
+    name: Complete prescribed lint and build checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
